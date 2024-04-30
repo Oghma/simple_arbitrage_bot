@@ -1,6 +1,6 @@
-//! Aevo exchange implementation
+//! DyDx exchange implementation
 
-use std::task::Poll;
+use std::{collections::HashMap, task::Poll};
 
 use futures_util::{SinkExt, Stream, StreamExt};
 use serde::Deserialize;
@@ -10,22 +10,21 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 use super::{BookEntry, Exchange, OrderBookMessage, Symbol};
 
-const WSS_URL: &str = "wss://ws.aevo.xyz";
+const WSS_URL: &str = "wss://indexer.dydx.trade/v4/ws";
 
-pub struct Aevo {
+pub struct DyDx {
     receiver: mpsc::Receiver<BookRawMessage>,
     sender: mpsc::Sender<BookRawMessage>,
 }
 
-impl Aevo {
+impl DyDx {
     pub fn new() -> Self {
         let (sender, receiver) = mpsc::channel(10000);
-
         Self { receiver, sender }
     }
 }
 
-impl Exchange for Aevo {
+impl Exchange for DyDx {
     fn order_book_subscribe(&self, symbol: &Symbol) {
         // This is very ugly and should not be done. The connection with the
         // exchange should be created when the object is created. The method
@@ -35,27 +34,33 @@ impl Exchange for Aevo {
     }
 }
 
-impl Stream for Aevo {
+impl Stream for DyDx {
     type Item = OrderBookMessage;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-    ) -> Poll<Option<Self::Item>> {
+    ) -> std::task::Poll<Option<Self::Item>> {
         match self.receiver.poll_recv(cx) {
-            Poll::Ready(Some(msg)) => match msg.msg_type.as_ref() {
-                "snapshot" => Poll::Ready(Some(OrderBookMessage::Snapshot {
-                    bids: msg.bids,
-                    asks: msg.asks,
+            Poll::Ready(Some(msg)) => match (
+                msg.contents["asks"].is_empty(),
+                msg.contents["bids"].is_empty(),
+            ) {
+                // Snapshot
+                (false, false) => Poll::Ready(Some(OrderBookMessage::Snapshot {
+                    bids: msg.contents["bids"].clone(),
+                    asks: msg.contents["asks"].clone(),
                 })),
-                "update" => {
-                    if msg.asks.is_empty() {
-                        Poll::Ready(Some(OrderBookMessage::BidUpdate(msg.bids[0].clone())))
-                    } else {
-                        Poll::Ready(Some(OrderBookMessage::AskUpdate(msg.asks[0].clone())))
-                    }
-                }
-                _ => panic!("received unknown orderbook message"),
+                // Bid update
+                (true, false) => Poll::Ready(Some(OrderBookMessage::BidUpdate(
+                    msg.contents["bids"][0].clone(),
+                ))),
+                // Ask update
+                (false, true) => Poll::Ready(Some(OrderBookMessage::AskUpdate(
+                    msg.contents["asks"][0].clone(),
+                ))),
+                // Both are empty, ignore
+                _ => Poll::Pending,
             },
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
@@ -64,14 +69,13 @@ impl Stream for Aevo {
 }
 
 async fn handle_wss(symbol: Symbol, channel: mpsc::Sender<BookRawMessage>) {
-    //FIXME: Remove all these unwrap
     loop {
-        // Connect to Aevo
+        //Connect to DyDx
         let (mut wss_stream, _) = connect_async(WSS_URL).await.expect("Failed to connect");
         // Send the order book subscription request
         wss_stream
             .send(Message::Text(
-                json!({"op":"subscribe", "data":[format!("orderbook:{}", symbol.0)]}).to_string(),
+                json!({"type":"subscribe", "channel":"v4_orderbook", "id":symbol.0}).to_string(),
             ))
             .await
             .unwrap();
@@ -79,8 +83,8 @@ async fn handle_wss(symbol: Symbol, channel: mpsc::Sender<BookRawMessage>) {
         wss_stream
             .for_each(|message| async {
                 let message = message.unwrap().into_text().unwrap();
-                match serde_json::from_str::<AevoRawMessage>(&message) {
-                    Ok(msg) => channel.send(msg.data).await.unwrap(),
+                match serde_json::from_str::<BookRawMessage>(&message) {
+                    Ok(msg) => channel.send(msg).await.unwrap(),
                     Err(_) => tracing::debug!("received unknown message {:?}", message),
                 }
             })
@@ -88,26 +92,14 @@ async fn handle_wss(symbol: Symbol, channel: mpsc::Sender<BookRawMessage>) {
     }
 }
 
-// Ignore unused variables for these two structs
-
 #[derive(Deserialize, Debug)]
 #[allow(dead_code)]
-struct BookRawMessage {
+pub struct BookRawMessage {
     #[serde(alias = "type")]
     msg_type: String,
-    instrument_id: String,
-    instrument_name: String,
-    instrument_type: String,
-    bids: Vec<BookEntry>,
-    asks: Vec<BookEntry>,
-    last_updated: String,
-    checksum: String,
-}
-
-#[derive(Deserialize, Debug)]
-#[allow(dead_code)]
-struct AevoRawMessage {
-    channel: Option<String>,
-    data: BookRawMessage,
-    write_ts: String,
+    connection_id: String,
+    message_id: String,
+    channel: String,
+    id: String,
+    contents: HashMap<String, Vec<BookEntry>>,
 }
