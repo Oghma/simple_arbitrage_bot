@@ -1,5 +1,14 @@
 //! Exchange implementations
 
+mod aevo;
+
+use futures_util::Stream;
+use serde::Deserialize;
+
+trait Exchange: Stream {
+    fn order_book_subscribe(&self, symbol: &'static Symbol);
+}
+
 #[derive(Clone, Debug)]
 pub enum OrderBookMessage {
     Snapshot {
@@ -10,7 +19,7 @@ pub enum OrderBookMessage {
     BidUpdate(BookEntry),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Deserialize, Debug)]
 pub struct BookEntry {
     pub amount: String,
     pub price: String,
