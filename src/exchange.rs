@@ -15,3 +15,5 @@ pub struct BookEntry {
     pub amount: String,
     pub price: String,
 }
+
+pub struct Symbol(String);
