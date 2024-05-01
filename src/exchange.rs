@@ -65,17 +65,22 @@ impl FromStr for Symbol {
     }
 }
 
+#[derive(Debug)]
 pub struct Wallet {
     pub base: f64,
     pub quote: f64,
 }
 
 impl Wallet {
-    pub fn init(initial_amount: f64, price: f64) -> Wallet {
-        let quote = initial_amount / 2.0;
+    pub fn new(initial_amount: f64) -> Wallet {
         Self {
-            base: quote / price,
-            quote,
+            base: 0.0,
+            quote: initial_amount,
         }
+    }
+
+    pub fn rebalance(&mut self, price: f64) {
+        self.quote = self.quote / 2.0;
+        self.base = self.quote / price;
     }
 }
