@@ -35,6 +35,99 @@ pub trait Exchange: Stream {
     }
 }
 
+#[derive(Debug)]
+pub struct OrderBook {
+    pub bids: Vec<TmpBookEntry>,
+    pub asks: Vec<TmpBookEntry>,
+}
+
+impl OrderBook {
+    pub fn new() -> Self {
+        Self {
+            bids: Vec::new(),
+            asks: Vec::new(),
+        }
+    }
+
+    pub fn best_ask(&self) -> Option<&TmpBookEntry> {
+        self.asks.get(0)
+    }
+
+    pub fn best_bid(&self) -> Option<&TmpBookEntry> {
+        self.bids.get(0)
+    }
+
+    pub fn update(&mut self, update: OrderBookMessage) {
+        match update {
+            OrderBookMessage::Snapshot { bids, asks } => {
+                self.bids = bids
+                    .iter()
+                    .map(|bid| TmpBookEntry {
+                        amount: bid.amount.parse().unwrap(),
+                        price: bid.price.parse().unwrap(),
+                    })
+                    .collect();
+                self.asks = asks
+                    .iter()
+                    .map(|ask| TmpBookEntry {
+                        amount: ask.amount.parse().unwrap(),
+                        price: ask.price.parse().unwrap(),
+                    })
+                    .collect();
+            }
+            OrderBookMessage::BidUpdate(entry) => {
+                let amount: f64 = entry.amount.parse().unwrap();
+                let price: f64 = entry.price.parse().unwrap();
+
+                // Remove the entry
+                if amount == 0.0 {
+                    if let Some(index) = self.bids.iter().position(|bid| bid.price == price) {
+                        self.bids.remove(index);
+                    }
+                } else {
+                    // Update the entry
+                    if let Some(index) = self.bids.iter().position(|bid| bid.price == price) {
+                        self.bids[index].amount = amount;
+                    } else {
+                        // New entry
+                        self.bids.push(TmpBookEntry { amount, price });
+
+                        self.bids
+                            .sort_by(|val1, val2| val1.price.partial_cmp(&val2.price).unwrap());
+                    }
+                }
+            }
+
+            OrderBookMessage::AskUpdate(entry) => {
+                let amount: f64 = entry.amount.parse().unwrap();
+                let price: f64 = entry.price.parse().unwrap();
+
+                // Remove the entry
+                if amount == 0.0 {
+                    if let Some(index) = self.asks.iter().position(|ask| ask.price == price) {
+                        self.asks.remove(index);
+                    }
+                } else {
+                    // Update the entry
+                    if let Some(index) = self.asks.iter().position(|ask| ask.price == price) {
+                        self.asks[index].amount = amount;
+                    } else {
+                        // New entry
+                        self.asks.push(TmpBookEntry { amount, price });
+
+                        self.asks
+                            .sort_by(|val1, val2| val1.price.partial_cmp(&val2.price).unwrap());
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone, Deserialize, Debug)]
+pub struct TmpBookEntry {
+    pub amount: f64,
+    pub price: f64,
 }
 
 #[derive(Clone, Debug)]
