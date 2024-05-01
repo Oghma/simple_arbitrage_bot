@@ -16,9 +16,10 @@ async fn main() -> anyhow::Result<()> {
     let aevo_symbol = Symbol::from_str(&std::env::var("AEVO_SYMBOL")?)?;
     let dydx_symbol = Symbol::from_str(&std::env::var("DYDX_SYMBOL")?)?;
     let starting_value = std::env::var("STARTING_VALUE")?.parse()?;
+    let persistent_trades = std::env::var("PERSISTENT_TRADES")?.parse()?;
 
-    let mut aevo = exchange::Aevo::new();
-    let mut dydx = exchange::DyDx::new();
+    let mut aevo = exchange::Aevo::new(persistent_trades);
+    let mut dydx = exchange::DyDx::new(persistent_trades);
 
     aevo.order_book_subscribe(&aevo_symbol);
     dydx.order_book_subscribe(&dydx_symbol);
@@ -75,8 +76,8 @@ async fn main() -> anyhow::Result<()> {
             }
 
             // Now that we have an amount to trade, place the orders
-            aevo_wallet = aevo.buy(amount, aevo_prices.1.price, aevo_wallet)?;
-            dydx_wallet = dydx.sell(amount, dydx_prices.0.price, dydx_wallet)?;
+            aevo_wallet = aevo.buy(amount, aevo_prices.1.price, aevo_wallet).await?;
+            dydx_wallet = dydx.sell(amount, dydx_prices.0.price, dydx_wallet).await?;
 
             tracing::info!(
                 "new trade! Bought on Aevo and sold on DydX. New P&L {}",
@@ -99,8 +100,8 @@ async fn main() -> anyhow::Result<()> {
             }
 
             // Now that we have an amount to trade, place the orders
-            aevo_wallet = aevo.sell(amount, aevo_prices.0.price, aevo_wallet)?;
-            dydx_wallet = dydx.buy(amount, dydx_prices.1.price, dydx_wallet)?;
+            aevo_wallet = aevo.sell(amount, aevo_prices.0.price, aevo_wallet).await?;
+            dydx_wallet = dydx.buy(amount, dydx_prices.1.price, dydx_wallet).await?;
 
             tracing::info!(
                 "new trade! Bought on DyDx and sold on Aevo. New P&L {}",

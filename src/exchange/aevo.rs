@@ -3,6 +3,7 @@
 use std::task::Poll;
 
 use futures_util::{SinkExt, Stream, StreamExt};
+use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::mpsc;
@@ -16,16 +17,18 @@ pub struct Aevo {
     receiver: mpsc::Receiver<BookRawMessage>,
     sender: mpsc::Sender<BookRawMessage>,
     order_book: OrderBook,
+    persistent_trades: bool,
 }
 
 impl Aevo {
-    pub fn new() -> Self {
+    pub fn new(persistent_trades: bool) -> Self {
         let (sender, receiver) = mpsc::channel(10000);
 
         Self {
             receiver,
             sender,
             order_book: OrderBook::new(),
+            persistent_trades,
         }
     }
 }
@@ -37,6 +40,48 @@ impl Exchange for Aevo {
         // should only send the subscription to the order book channel
         let symbol = symbol.clone();
         tokio::spawn(handle_wss(symbol, self.sender.clone()));
+    }
+
+    async fn handle_persistent_buy(&self, amount: Decimal, price: Decimal) -> anyhow::Result<()> {
+        if !self.persistent_trades {
+            return Ok(());
+        }
+
+        let Some(ask) = self.order_book.best_ask() else {
+            return Ok(());
+        };
+
+        // Update the entry
+        let entry = BookEntry {
+            price,
+            amount: ask.amount - amount,
+        };
+        let mut update = BookRawMessage::default();
+        update.msg_type = "update".to_string();
+        update.asks.push(entry);
+        self.sender.send(update).await?;
+        Ok(())
+    }
+
+    async fn handle_persistent_sell(&self, amount: Decimal, price: Decimal) -> anyhow::Result<()> {
+        if !self.persistent_trades {
+            return Ok(());
+        }
+
+        let Some(bid) = self.order_book.best_bid() else {
+            return Ok(());
+        };
+
+        // Update the entry
+        let entry = BookEntry {
+            price,
+            amount: bid.amount - amount,
+        };
+        let mut update = BookRawMessage::default();
+        update.msg_type = "update".to_string();
+        update.bids.push(entry);
+        self.sender.send(update).await?;
+        Ok(())
     }
 }
 
@@ -103,7 +148,7 @@ async fn handle_wss(symbol: Symbol, channel: mpsc::Sender<BookRawMessage>) {
 
 // Ignore unused variables for these two structs
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Default)]
 #[allow(dead_code)]
 struct BookRawMessage {
     #[serde(alias = "type")]

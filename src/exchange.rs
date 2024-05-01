@@ -16,25 +16,39 @@ use serde::Deserialize;
 pub trait Exchange: Stream {
     fn order_book_subscribe(&self, symbol: &Symbol);
 
-    fn buy(&self, amount: Decimal, price: Decimal, wallet: Wallet) -> anyhow::Result<Wallet> {
+    async fn buy(&self, amount: Decimal, price: Decimal, wallet: Wallet) -> anyhow::Result<Wallet> {
         // We are buying base token for quote token
         let new_base_amount = wallet.base + amount;
         let new_quote_amount = wallet.quote - (price * amount);
+        self.handle_persistent_buy(amount, price).await?;
+
         Ok(Wallet {
             base: new_base_amount,
             quote: new_quote_amount,
         })
     }
 
-    fn sell(&self, amount: Decimal, price: Decimal, wallet: Wallet) -> anyhow::Result<Wallet> {
+    async fn sell(
+        &self,
+        amount: Decimal,
+        price: Decimal,
+        wallet: Wallet,
+    ) -> anyhow::Result<Wallet> {
         // We are selling base token for quote token
         let new_base_amount = wallet.base - amount;
         let new_quote_amount = wallet.quote + (price * amount);
+        self.handle_persistent_sell(amount, price).await?;
+
         Ok(Wallet {
             base: new_base_amount,
             quote: new_quote_amount,
         })
     }
+
+    // The methods are here to handle fake trades. A real exchange implementation
+    // should not have it
+    async fn handle_persistent_buy(&self, amount: Decimal, price: Decimal) -> anyhow::Result<()>;
+    async fn handle_persistent_sell(&self, amount: Decimal, price: Decimal) -> anyhow::Result<()>;
 }
 
 #[derive(Debug)]
