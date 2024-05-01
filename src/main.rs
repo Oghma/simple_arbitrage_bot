@@ -9,12 +9,13 @@ mod exchange;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    dotenv::dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    // TODO: Move in configuration
-    let aevo_symbol = Symbol::from_str("BTC-PERP")?;
-    let dydx_symbol = Symbol::from_str("BTC-USD")?;
-    let starting_value = dec!(1000);
+    // Configuration
+    let aevo_symbol = Symbol::from_str(&std::env::var("AEVO_SYMBOL")?)?;
+    let dydx_symbol = Symbol::from_str(&std::env::var("DYDX_SYMBOL")?)?;
+    let starting_value = std::env::var("STARTING_VALUE")?.parse()?;
 
     let mut aevo = exchange::Aevo::new();
     let mut dydx = exchange::DyDx::new();

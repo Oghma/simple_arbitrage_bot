@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.82"
+dotenv = "0.15.0"
 futures-util = "0.3.30"
 rust_decimal = "1.35.0"
 rust_decimal_macros = "1.34.2"
