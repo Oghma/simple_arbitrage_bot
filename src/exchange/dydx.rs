@@ -38,10 +38,10 @@ impl Stream for DyDx {
     type Item = OrderBookMessage;
 
     fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
+        self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
-        match self.receiver.poll_recv(cx) {
+        match self.get_mut().receiver.poll_recv(cx) {
             Poll::Ready(Some(msg)) => {
                 match (
                     msg.contents.contains_key("asks"),
