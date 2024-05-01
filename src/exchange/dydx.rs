@@ -8,19 +8,24 @@ use serde_json::json;
 use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
-use super::{BookEntry, Exchange, OrderBookMessage, Symbol};
+use super::{BookEntry, Exchange, OrderBook, OrderBookMessage, Symbol};
 
 const WSS_URL: &str = "wss://indexer.dydx.trade/v4/ws";
 
 pub struct DyDx {
     receiver: mpsc::Receiver<BookRawMessage>,
     sender: mpsc::Sender<BookRawMessage>,
+    order_book: OrderBook,
 }
 
 impl DyDx {
     pub fn new() -> Self {
         let (sender, receiver) = mpsc::channel(10000);
-        Self { receiver, sender }
+        Self {
+            receiver,
+            sender,
+            order_book: OrderBook::new(),
+        }
     }
 }
 
@@ -35,34 +40,41 @@ impl Exchange for DyDx {
 }
 
 impl Stream for DyDx {
-    type Item = OrderBookMessage;
+    type Item = (Option<BookEntry>, Option<BookEntry>);
 
     fn poll_next(
-        self: std::pin::Pin<&mut Self>,
+        mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
-        match self.get_mut().receiver.poll_recv(cx) {
+        match self.receiver.poll_recv(cx) {
             Poll::Ready(Some(msg)) => {
-                match (
+                let update = match (
                     msg.contents.contains_key("asks"),
                     msg.contents.contains_key("bids"),
                 ) {
                     // Snapshot
-                    (true, true) => Poll::Ready(Some(OrderBookMessage::Snapshot {
+                    (true, true) => Some(OrderBookMessage::Snapshot {
                         bids: msg.contents["bids"].clone(),
                         asks: msg.contents["asks"].clone(),
-                    })),
+                    }),
                     // Bid update
-                    (false, true) => Poll::Ready(Some(OrderBookMessage::BidUpdate(
-                        msg.contents["bids"][0].clone(),
-                    ))),
+                    (false, true) => {
+                        Some(OrderBookMessage::BidUpdate(msg.contents["bids"][0].clone()))
+                    }
                     // Ask update
-                    (true, false) => Poll::Ready(Some(OrderBookMessage::AskUpdate(
-                        msg.contents["asks"][0].clone(),
-                    ))),
+                    (true, false) => {
+                        Some(OrderBookMessage::AskUpdate(msg.contents["asks"][0].clone()))
+                    }
                     // Both are empty, ignore
-                    _ => Poll::Pending,
+                    _ => None,
+                };
+                if let Some(upd) = update {
+                    self.order_book.update(upd);
                 }
+                Poll::Ready(Some((
+                    self.order_book.best_ask().cloned(),
+                    self.order_book.best_bid().cloned(),
+                )))
             }
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,

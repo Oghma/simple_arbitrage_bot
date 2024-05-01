@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use exchange::{Exchange, OrderBook, Symbol, Wallet};
+use exchange::{Exchange, Symbol, Wallet};
 use futures_util::StreamExt;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -23,26 +23,26 @@ async fn main() -> anyhow::Result<()> {
     aevo.order_book_subscribe(&aevo_symbol);
     dydx.order_book_subscribe(&dydx_symbol);
 
-    let mut aevo_book = OrderBook::new();
-    let mut dydx_book = OrderBook::new();
-
     let mut wallets_initialized = false;
     let mut aevo_wallet = Wallet::new(starting_value);
     let mut dydx_wallet = Wallet::new(starting_value);
 
+    let mut aevo_prices = (None, None);
+    let mut dydx_prices = (None, None);
+
     loop {
         tokio::select! {
-            Some(book_message) = dydx.next() => {dydx_book.update(book_message);}
-            Some(book_message) = aevo.next() => {aevo_book.update(book_message);}
+            Some(bests) = dydx.next() => {aevo_prices = bests;}
+            Some(bests) = aevo.next() => {dydx_prices = bests;}
         };
 
-        let aevo_prices = match (aevo_book.best_ask(), aevo_book.best_bid()) {
-            (Some(bid), Some(ask)) => (bid, ask),
+        let aevo_prices = match aevo_prices {
+            (Some(ref bid), Some(ref ask)) => (bid, ask),
             _ => continue,
         };
 
-        let dydx_prices = match (dydx_book.best_ask(), dydx_book.best_bid()) {
-            (Some(bid), Some(ask)) => (bid, ask),
+        let dydx_prices = match dydx_prices {
+            (Some(ref bid), Some(ref ask)) => (bid, ask),
             _ => continue,
         };
 

@@ -8,20 +8,25 @@ use serde_json::json;
 use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
-use super::{BookEntry, Exchange, OrderBookMessage, Symbol};
+use super::{BookEntry, Exchange, OrderBook, OrderBookMessage, Symbol};
 
 const WSS_URL: &str = "wss://ws.aevo.xyz";
 
 pub struct Aevo {
     receiver: mpsc::Receiver<BookRawMessage>,
     sender: mpsc::Sender<BookRawMessage>,
+    order_book: OrderBook,
 }
 
 impl Aevo {
     pub fn new() -> Self {
         let (sender, receiver) = mpsc::channel(10000);
 
-        Self { receiver, sender }
+        Self {
+            receiver,
+            sender,
+            order_book: OrderBook::new(),
+        }
     }
 }
 
@@ -36,27 +41,35 @@ impl Exchange for Aevo {
 }
 
 impl Stream for Aevo {
-    type Item = OrderBookMessage;
+    type Item = (Option<BookEntry>, Option<BookEntry>);
 
     fn poll_next(
-        self: std::pin::Pin<&mut Self>,
+        mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
-        match self.get_mut().receiver.poll_recv(cx) {
-            Poll::Ready(Some(msg)) => match msg.msg_type.as_ref() {
-                "snapshot" => Poll::Ready(Some(OrderBookMessage::Snapshot {
-                    bids: msg.bids,
-                    asks: msg.asks,
-                })),
-                "update" => {
-                    if msg.asks.is_empty() {
-                        Poll::Ready(Some(OrderBookMessage::BidUpdate(msg.bids[0].clone())))
-                    } else {
-                        Poll::Ready(Some(OrderBookMessage::AskUpdate(msg.asks[0].clone())))
+        // We process order book messages internally. Return only best ask/bid
+        match self.receiver.poll_recv(cx) {
+            Poll::Ready(Some(msg)) => {
+                let update = match msg.msg_type.as_ref() {
+                    "snapshot" => OrderBookMessage::Snapshot {
+                        bids: msg.bids,
+                        asks: msg.asks,
+                    },
+                    "update" => {
+                        if msg.asks.is_empty() {
+                            OrderBookMessage::BidUpdate(msg.bids[0].clone())
+                        } else {
+                            OrderBookMessage::AskUpdate(msg.asks[0].clone())
+                        }
                     }
-                }
-                _ => panic!("received unknown orderbook message"),
-            },
+                    _ => panic!("received unknown orderbook message"),
+                };
+                self.order_book.update(update);
+                Poll::Ready(Some((
+                    self.order_book.best_ask().cloned(),
+                    self.order_book.best_bid().cloned(),
+                )))
+            }
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
         }

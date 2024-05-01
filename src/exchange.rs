@@ -59,7 +59,7 @@ impl OrderBook {
         self.bids.get(0)
     }
 
-    pub fn update(&mut self, update: OrderBookMessage) {
+    fn update(&mut self, update: OrderBookMessage) {
         match update {
             OrderBookMessage::Snapshot { bids, asks } => {
                 self.bids = bids;
@@ -109,7 +109,7 @@ impl OrderBook {
 }
 
 #[derive(Clone, Debug)]
-pub enum OrderBookMessage {
+enum OrderBookMessage {
     Snapshot {
         bids: Vec<BookEntry>,
         asks: Vec<BookEntry>,
