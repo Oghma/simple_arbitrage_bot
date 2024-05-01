@@ -94,7 +94,7 @@ impl OrderBook {
                         self.bids.push(entry);
 
                         self.bids
-                            .sort_by(|val1, val2| val1.price.partial_cmp(&val2.price).unwrap());
+                            .sort_by(|val1, val2| val2.price.partial_cmp(&val1.price).unwrap())
                     }
                 }
             }

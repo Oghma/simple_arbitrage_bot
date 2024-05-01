@@ -115,8 +115,8 @@ impl Stream for Aevo {
                 };
                 self.order_book.update(update);
                 Poll::Ready(Some((
-                    self.order_book.best_ask().cloned(),
                     self.order_book.best_bid().cloned(),
+                    self.order_book.best_ask().cloned(),
                 )))
             }
             Poll::Ready(None) => Poll::Ready(None),
