@@ -66,11 +66,11 @@ impl OrderBook {
     }
 
     pub fn best_ask(&self) -> Option<&BookEntry> {
-        self.asks.get(0)
+        self.asks.first()
     }
 
     pub fn best_bid(&self) -> Option<&BookEntry> {
-        self.bids.get(0)
+        self.bids.first()
     }
 
     fn update(&mut self, update: OrderBookMessage) {
@@ -165,7 +165,7 @@ impl Wallet {
     }
 
     pub fn rebalance(&mut self, price: Decimal) {
-        self.quote = self.quote / dec!(2);
+        self.quote /= dec!(2);
         self.base = self.quote / price;
     }
 }

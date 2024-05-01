@@ -56,8 +56,10 @@ impl Exchange for Aevo {
             price,
             amount: ask.amount - amount,
         };
-        let mut update = BookRawMessage::default();
-        update.msg_type = "update".to_string();
+        let mut update = BookRawMessage {
+            msg_type: "update".to_string(),
+            ..Default::default()
+        };
         update.asks.push(entry);
         self.sender.send(update).await?;
         Ok(())
@@ -77,8 +79,10 @@ impl Exchange for Aevo {
             price,
             amount: bid.amount - amount,
         };
-        let mut update = BookRawMessage::default();
-        update.msg_type = "update".to_string();
+        let mut update = BookRawMessage {
+            msg_type: "update".to_string(),
+            ..Default::default()
+        };
         update.bids.push(entry);
         self.sender.send(update).await?;
         Ok(())
