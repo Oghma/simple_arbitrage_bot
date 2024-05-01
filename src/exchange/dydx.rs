@@ -135,11 +135,20 @@ async fn handle_wss(symbol: Symbol, channel: mpsc::Sender<BookRawMessage>) {
                 json!({"type":"subscribe", "channel":"v4_orderbook", "id":symbol.0}).to_string(),
             ))
             .await
-            .unwrap();
+            .expect("Failed to send orderbook subscription");
 
         wss_stream
             .for_each(|message| async {
-                let message = message.unwrap().into_text().unwrap();
+                // If we receive an error close the connection and try to reconnect
+                let Ok(message) = message else {
+                    return;
+                };
+                // Again, at the moment if we fail to convert in string close
+                // the connection and try to reconnect
+                let Ok(message) = message.into_text() else {
+                    return;
+                };
+
                 match serde_json::from_str::<BookRawMessage>(&message) {
                     Ok(msg) => channel.send(msg).await.unwrap(),
                     Err(_) => tracing::debug!("received unknown message {:?}", message),

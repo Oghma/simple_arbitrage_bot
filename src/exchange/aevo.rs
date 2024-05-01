@@ -126,7 +126,6 @@ impl Stream for Aevo {
 }
 
 async fn handle_wss(symbol: Symbol, channel: mpsc::Sender<BookRawMessage>) {
-    //FIXME: Remove all these unwrap
     loop {
         // Connect to Aevo
         let (mut wss_stream, _) = connect_async(WSS_URL).await.expect("Failed to connect");
@@ -136,11 +135,20 @@ async fn handle_wss(symbol: Symbol, channel: mpsc::Sender<BookRawMessage>) {
                 json!({"op":"subscribe", "data":[format!("orderbook:{}", symbol.0)]}).to_string(),
             ))
             .await
-            .unwrap();
+            .expect("Failed to send orderbook subscription");
 
         wss_stream
             .for_each(|message| async {
-                let message = message.unwrap().into_text().unwrap();
+                // If we receive an error close the connection and try to reconnect
+                let Ok(message) = message else {
+                    return;
+                };
+                // Again, at the moment if we fail to convert in string close
+                // the connection and try to reconnect
+                let Ok(message) = message.into_text() else {
+                    return;
+                };
+
                 match serde_json::from_str::<AevoRawMessage>(&message) {
                     Ok(msg) => channel.send(msg.data).await.unwrap(),
                     Err(_) => tracing::debug!("received unknown message {:?}", message),
