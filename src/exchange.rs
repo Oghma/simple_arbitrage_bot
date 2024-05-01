@@ -18,8 +18,9 @@ pub trait Exchange: Stream {
 
     async fn buy(&self, amount: Decimal, price: Decimal, wallet: Wallet) -> anyhow::Result<Wallet> {
         // We are buying base token for quote token
+        let fee = self.handle_fee(price * amount);
         let new_base_amount = wallet.base + amount;
-        let new_quote_amount = wallet.quote - (price * amount);
+        let new_quote_amount = wallet.quote - (price * amount) - fee;
         self.handle_persistent_buy(amount, price).await?;
 
         Ok(Wallet {
@@ -35,8 +36,9 @@ pub trait Exchange: Stream {
         wallet: Wallet,
     ) -> anyhow::Result<Wallet> {
         // We are selling base token for quote token
+        let fee = self.handle_fee(price * amount);
         let new_base_amount = wallet.base - amount;
-        let new_quote_amount = wallet.quote + (price * amount);
+        let new_quote_amount = wallet.quote + (price * amount) - fee;
         self.handle_persistent_sell(amount, price).await?;
 
         Ok(Wallet {
@@ -49,6 +51,7 @@ pub trait Exchange: Stream {
     // should not have it
     async fn handle_persistent_buy(&self, amount: Decimal, price: Decimal) -> anyhow::Result<()>;
     async fn handle_persistent_sell(&self, amount: Decimal, price: Decimal) -> anyhow::Result<()>;
+    fn handle_fee(&self, amount: Decimal) -> Decimal;
 }
 
 #[derive(Debug)]

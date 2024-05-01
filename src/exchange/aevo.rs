@@ -18,10 +18,11 @@ pub struct Aevo {
     sender: mpsc::Sender<BookRawMessage>,
     order_book: OrderBook,
     persistent_trades: bool,
+    fee: Decimal,
 }
 
 impl Aevo {
-    pub fn new(persistent_trades: bool) -> Self {
+    pub fn new(persistent_trades: bool, fee: Decimal) -> Self {
         let (sender, receiver) = mpsc::channel(10000);
 
         Self {
@@ -29,6 +30,7 @@ impl Aevo {
             sender,
             order_book: OrderBook::new(),
             persistent_trades,
+            fee,
         }
     }
 }
@@ -86,6 +88,10 @@ impl Exchange for Aevo {
         update.bids.push(entry);
         self.sender.send(update).await?;
         Ok(())
+    }
+
+    fn handle_fee(&self, amount: Decimal) -> Decimal {
+        amount * self.fee
     }
 }
 

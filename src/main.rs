@@ -14,12 +14,14 @@ async fn main() -> anyhow::Result<()> {
 
     // Configuration
     let aevo_symbol = Symbol::from_str(&std::env::var("AEVO_SYMBOL")?)?;
+    let aevo_fee = std::env::var("AEVO_FEE")?.parse()?;
     let dydx_symbol = Symbol::from_str(&std::env::var("DYDX_SYMBOL")?)?;
+    let dydx_fee = std::env::var("DYDX_FEE")?.parse()?;
     let starting_value = std::env::var("STARTING_VALUE")?.parse()?;
     let persistent_trades = std::env::var("PERSISTENT_TRADES")?.parse()?;
 
-    let mut aevo = exchange::Aevo::new(persistent_trades);
-    let mut dydx = exchange::DyDx::new(persistent_trades);
+    let mut aevo = exchange::Aevo::new(persistent_trades, aevo_fee);
+    let mut dydx = exchange::DyDx::new(persistent_trades, dydx_fee);
 
     aevo.order_book_subscribe(&aevo_symbol);
     dydx.order_book_subscribe(&dydx_symbol);
@@ -71,7 +73,15 @@ async fn main() -> anyhow::Result<()> {
 
             amount = amount_quote / curr_base_price;
 
-            if amount.is_zero() {
+            if amount.is_zero()
+                || !is_profitable(
+                    amount,
+                    dydx_prices.0.price,
+                    aevo_prices.1.price,
+                    dydx_fee,
+                    aevo_fee,
+                )
+            {
                 continue;
             }
 
@@ -96,7 +106,15 @@ async fn main() -> anyhow::Result<()> {
 
             amount = amount_quote / curr_base_price;
 
-            if amount.is_zero() {
+            if amount.is_zero()
+                || !is_profitable(
+                    amount,
+                    aevo_prices.0.price,
+                    dydx_prices.1.price,
+                    aevo_fee,
+                    dydx_fee,
+                )
+            {
                 continue;
             }
 
@@ -131,4 +149,17 @@ fn calculate_pl(
         wallet1.quote + wallet2.quote + wallet1.base * curr_price + wallet2.base * curr_price;
 
     (total / starting_value) - dec!(1)
+}
+
+fn is_profitable(
+    amount: Decimal,
+    sell_price: Decimal,
+    buy_price: Decimal,
+    sell_fee: Decimal,
+    buy_fee: Decimal,
+) -> bool {
+    let sell = amount * sell_price;
+    let buy = amount * buy_price;
+
+    sell - buy - sell * sell_fee - buy * buy_fee > dec!(0)
 }
