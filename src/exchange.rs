@@ -21,6 +21,10 @@ pub trait Exchange: Stream {
         let fee = self.handle_fee(price * amount);
         let new_base_amount = wallet.base + amount;
         let new_quote_amount = wallet.quote - (price * amount) - fee;
+        // Sometimes, the first trade brings the amount below 0. This is
+        // probably because we do not manage the number of digit. Add a check
+        // for simplicity
+        let new_quote_amount = new_quote_amount.max(dec!(0));
         self.handle_persistent_buy(amount, price).await?;
 
         Ok(Wallet {
