@@ -80,7 +80,8 @@ async fn main() -> anyhow::Result<()> {
             dydx_wallet = dydx.sell(amount, dydx_prices.0.price, dydx_wallet).await?;
 
             tracing::info!(
-                "new trade! Bought on Aevo and sold on DydX. New P&L {}",
+                "new trade! Bought {:.4} on Aevo and sold on DydX. New P&L {:.4}",
+                amount,
                 calculate_pl(starting_value, curr_base_price, &aevo_wallet, &dydx_wallet)
             );
             tracing::debug!("{:?} {:?}", aevo_wallet, dydx_wallet);
@@ -104,7 +105,8 @@ async fn main() -> anyhow::Result<()> {
             dydx_wallet = dydx.buy(amount, dydx_prices.1.price, dydx_wallet).await?;
 
             tracing::info!(
-                "new trade! Bought on DyDx and sold on Aevo. New P&L {}",
+                "new trade! Bought {:.4} on DyDx and sold on Aevo. New P&L {:.4}",
+                amount,
                 calculate_pl(starting_value, curr_base_price, &aevo_wallet, &dydx_wallet)
             );
             tracing::debug!("{:?} {:?}", aevo_wallet, dydx_wallet);
