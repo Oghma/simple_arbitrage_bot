@@ -42,26 +42,28 @@ impl Stream for DyDx {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         match self.receiver.poll_recv(cx) {
-            Poll::Ready(Some(msg)) => match (
-                msg.contents["asks"].is_empty(),
-                msg.contents["bids"].is_empty(),
-            ) {
-                // Snapshot
-                (false, false) => Poll::Ready(Some(OrderBookMessage::Snapshot {
-                    bids: msg.contents["bids"].clone(),
-                    asks: msg.contents["asks"].clone(),
-                })),
-                // Bid update
-                (true, false) => Poll::Ready(Some(OrderBookMessage::BidUpdate(
-                    msg.contents["bids"][0].clone(),
-                ))),
-                // Ask update
-                (false, true) => Poll::Ready(Some(OrderBookMessage::AskUpdate(
-                    msg.contents["asks"][0].clone(),
-                ))),
-                // Both are empty, ignore
-                _ => Poll::Pending,
-            },
+            Poll::Ready(Some(msg)) => {
+                match (
+                    msg.contents.contains_key("asks"),
+                    msg.contents.contains_key("bids"),
+                ) {
+                    // Snapshot
+                    (true, true) => Poll::Ready(Some(OrderBookMessage::Snapshot {
+                        bids: msg.contents["bids"].clone(),
+                        asks: msg.contents["asks"].clone(),
+                    })),
+                    // Bid update
+                    (false, true) => Poll::Ready(Some(OrderBookMessage::BidUpdate(
+                        msg.contents["bids"][0].clone(),
+                    ))),
+                    // Ask update
+                    (true, false) => Poll::Ready(Some(OrderBookMessage::AskUpdate(
+                        msg.contents["asks"][0].clone(),
+                    ))),
+                    // Both are empty, ignore
+                    _ => Poll::Pending,
+                }
+            }
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
         }
@@ -98,7 +100,7 @@ pub struct BookRawMessage {
     #[serde(alias = "type")]
     msg_type: String,
     connection_id: String,
-    message_id: String,
+    message_id: usize,
     channel: String,
     id: String,
     contents: HashMap<String, Vec<BookEntry>>,
