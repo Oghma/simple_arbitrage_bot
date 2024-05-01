@@ -49,6 +49,7 @@ pub enum OrderBookMessage {
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct BookEntry {
+    #[serde(alias = "size")]
     pub amount: String,
     pub price: String,
 }
