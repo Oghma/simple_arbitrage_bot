@@ -39,8 +39,8 @@ pub trait Exchange: Stream {
 
 #[derive(Debug)]
 pub struct OrderBook {
-    pub bids: Vec<TmpBookEntry>,
-    pub asks: Vec<TmpBookEntry>,
+    pub bids: Vec<BookEntry>,
+    pub asks: Vec<BookEntry>,
 }
 
 impl OrderBook {
@@ -51,48 +51,33 @@ impl OrderBook {
         }
     }
 
-    pub fn best_ask(&self) -> Option<&TmpBookEntry> {
+    pub fn best_ask(&self) -> Option<&BookEntry> {
         self.asks.get(0)
     }
 
-    pub fn best_bid(&self) -> Option<&TmpBookEntry> {
+    pub fn best_bid(&self) -> Option<&BookEntry> {
         self.bids.get(0)
     }
 
     pub fn update(&mut self, update: OrderBookMessage) {
         match update {
             OrderBookMessage::Snapshot { bids, asks } => {
-                self.bids = bids
-                    .iter()
-                    .map(|bid| TmpBookEntry {
-                        amount: bid.amount,
-                        price: bid.price,
-                    })
-                    .collect();
-                self.asks = asks
-                    .iter()
-                    .map(|ask| TmpBookEntry {
-                        amount: ask.amount,
-                        price: ask.price,
-                    })
-                    .collect();
+                self.bids = bids;
+                self.asks = asks;
             }
             OrderBookMessage::BidUpdate(entry) => {
-                let amount: Decimal = entry.amount;
-                let price: Decimal = entry.price;
-
                 // Remove the entry
-                if amount.is_zero() {
-                    if let Some(index) = self.bids.iter().position(|bid| bid.price == price) {
+                if entry.amount.is_zero() {
+                    if let Some(index) = self.bids.iter().position(|bid| bid.price == entry.price) {
                         self.bids.remove(index);
                     }
                 } else {
                     // Update the entry
-                    if let Some(index) = self.bids.iter().position(|bid| bid.price == price) {
-                        self.bids[index].amount = amount;
+                    if let Some(index) = self.bids.iter().position(|bid| bid.price == entry.price) {
+                        self.bids[index].amount = entry.amount;
                     } else {
                         // New entry
-                        self.bids.push(TmpBookEntry { amount, price });
+                        self.bids.push(entry);
 
                         self.bids
                             .sort_by(|val1, val2| val1.price.partial_cmp(&val2.price).unwrap());
@@ -101,21 +86,18 @@ impl OrderBook {
             }
 
             OrderBookMessage::AskUpdate(entry) => {
-                let amount: Decimal = entry.amount;
-                let price: Decimal = entry.price;
-
                 // Remove the entry
-                if amount.is_zero() {
-                    if let Some(index) = self.asks.iter().position(|ask| ask.price == price) {
+                if entry.amount.is_zero() {
+                    if let Some(index) = self.asks.iter().position(|ask| ask.price == entry.price) {
                         self.asks.remove(index);
                     }
                 } else {
                     // Update the entry
-                    if let Some(index) = self.asks.iter().position(|ask| ask.price == price) {
-                        self.asks[index].amount = amount;
+                    if let Some(index) = self.asks.iter().position(|ask| ask.price == entry.price) {
+                        self.asks[index].amount = entry.amount;
                     } else {
                         // New entry
-                        self.asks.push(TmpBookEntry { amount, price });
+                        self.asks.push(entry);
 
                         self.asks
                             .sort_by(|val1, val2| val1.price.partial_cmp(&val2.price).unwrap());
@@ -124,12 +106,6 @@ impl OrderBook {
             }
         }
     }
-}
-
-#[derive(Clone, Deserialize, Debug)]
-pub struct TmpBookEntry {
-    pub amount: f64,
-    pub price: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -144,9 +120,9 @@ pub enum OrderBookMessage {
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct BookEntry {
-    pub price: String,
+    pub price: Decimal,
     #[serde(alias = "size")]
-    pub amount: String,
+    pub amount: Decimal,
 }
 
 #[derive(Clone)]
