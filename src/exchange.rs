@@ -172,3 +172,9 @@ impl Wallet {
         self.base = self.quote / price;
     }
 }
+
+impl std::fmt::Display for Wallet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "base {} quote {}", self.base, self.quote)
+    }
+}

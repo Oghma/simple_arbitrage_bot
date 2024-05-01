@@ -12,6 +12,9 @@ async fn main() -> anyhow::Result<()> {
     dotenv::dotenv().ok();
     tracing_subscriber::fmt::init();
 
+    tracing::info!("starting bot");
+
+    tracing::info!("initializing...");
     // Configuration
     let aevo_symbol = Symbol::from_str(&std::env::var("AEVO_SYMBOL")?)?;
     let aevo_fee = std::env::var("AEVO_FEE")?.parse()?;
@@ -32,6 +35,8 @@ async fn main() -> anyhow::Result<()> {
 
     let mut aevo_prices = (None, None);
     let mut dydx_prices = (None, None);
+
+    tracing::info!("initialized, starting...");
 
     loop {
         tokio::select! {
@@ -90,11 +95,27 @@ async fn main() -> anyhow::Result<()> {
             dydx_wallet = dydx.sell(amount, dydx_prices.0.price, dydx_wallet).await?;
 
             tracing::info!(
-                "new trade! Bought {:.4} on Aevo and sold on DydX. New P&L {:.4}",
-                amount,
-                calculate_pl(starting_value, curr_base_price, &aevo_wallet, &dydx_wallet)
+                "================================================================================"
             );
-            tracing::debug!("{:?} {:?}", aevo_wallet, dydx_wallet);
+            tracing::info!(
+                "BUY on Aevo amount: {:.4} price: {:.4}",
+                amount,
+                aevo_prices.1.price
+            );
+            tracing::info!(
+                "SELL on DyDx amount {:.4} price {:.4}",
+                amount,
+                dydx_prices.0.price
+            );
+            tracing::info!("Aevo wallet {}", aevo_wallet);
+            tracing::info!("Dydx wallet {}", dydx_wallet);
+            let (pl, total) =
+                calculate_pl(starting_value, curr_base_price, &aevo_wallet, &dydx_wallet);
+            tracing::info!("total balance {}. New P&L {:.4}%", total, pl);
+            tracing::info!(
+                "================================================================================"
+            );
+            tracing::info!("");
         } else if spread2 > dec!(0) {
             //We are going to buy on DyDx and sell on Aevo
             // Find the maximum amount we can trade
@@ -123,11 +144,27 @@ async fn main() -> anyhow::Result<()> {
             dydx_wallet = dydx.buy(amount, dydx_prices.1.price, dydx_wallet).await?;
 
             tracing::info!(
-                "new trade! Bought {:.4} on DyDx and sold on Aevo. New P&L {:.4}",
-                amount,
-                calculate_pl(starting_value, curr_base_price, &aevo_wallet, &dydx_wallet)
+                "================================================================================"
             );
-            tracing::debug!("{:?} {:?}", aevo_wallet, dydx_wallet);
+            tracing::info!(
+                "BUY on DyDx amount: {:.4} price: {:.4}",
+                amount,
+                dydx_prices.1.price
+            );
+            tracing::info!(
+                "SELL on Aevo amount {:.4} price {:.4}",
+                amount,
+                aevo_prices.0.price
+            );
+            tracing::info!("Aevo wallet {}", aevo_wallet);
+            tracing::info!("Dydx wallet {}", dydx_wallet);
+            let (pl, total) =
+                calculate_pl(starting_value, curr_base_price, &aevo_wallet, &dydx_wallet);
+            tracing::info!("total balance {}. New P&L {:.4}%", total, pl);
+            tracing::info!(
+                "================================================================================"
+            );
+            tracing::info!("");
         }
     }
 }
@@ -142,13 +179,14 @@ fn calculate_pl(
     curr_price: Decimal,
     wallet1: &Wallet,
     wallet2: &Wallet,
-) -> Decimal {
+) -> (Decimal, Decimal) {
     // This is not the standard formula for calculating P&L
     let starting_value = starting_value * dec!(2);
     let total =
         wallet1.quote + wallet2.quote + wallet1.base * curr_price + wallet2.base * curr_price;
+    let pl = (total / starting_value) - dec!(1);
 
-    (total / starting_value) - dec!(1)
+    (pl, total)
 }
 
 fn is_profitable(
