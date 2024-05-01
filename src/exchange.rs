@@ -9,12 +9,14 @@ pub use aevo::Aevo;
 pub use dydx::DyDx;
 
 use futures_util::Stream;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde::Deserialize;
 
 pub trait Exchange: Stream {
     fn order_book_subscribe(&self, symbol: &Symbol);
 
-    fn buy(&self, amount: f64, price: f64, wallet: Wallet) -> anyhow::Result<Wallet> {
+    fn buy(&self, amount: Decimal, price: Decimal, wallet: Wallet) -> anyhow::Result<Wallet> {
         // We are buying base token for quote token
         let new_base_amount = wallet.base + amount;
         let new_quote_amount = wallet.quote - (price * amount);
@@ -24,7 +26,7 @@ pub trait Exchange: Stream {
         })
     }
 
-    fn sell(&self, amount: f64, price: f64, wallet: Wallet) -> anyhow::Result<Wallet> {
+    fn sell(&self, amount: Decimal, price: Decimal, wallet: Wallet) -> anyhow::Result<Wallet> {
         // We are selling base token for quote token
         let new_base_amount = wallet.base - amount;
         let new_quote_amount = wallet.quote + (price * amount);
@@ -63,24 +65,24 @@ impl OrderBook {
                 self.bids = bids
                     .iter()
                     .map(|bid| TmpBookEntry {
-                        amount: bid.amount.parse().unwrap(),
-                        price: bid.price.parse().unwrap(),
+                        amount: bid.amount,
+                        price: bid.price,
                     })
                     .collect();
                 self.asks = asks
                     .iter()
                     .map(|ask| TmpBookEntry {
-                        amount: ask.amount.parse().unwrap(),
-                        price: ask.price.parse().unwrap(),
+                        amount: ask.amount,
+                        price: ask.price,
                     })
                     .collect();
             }
             OrderBookMessage::BidUpdate(entry) => {
-                let amount: f64 = entry.amount.parse().unwrap();
-                let price: f64 = entry.price.parse().unwrap();
+                let amount: Decimal = entry.amount;
+                let price: Decimal = entry.price;
 
                 // Remove the entry
-                if amount == 0.0 {
+                if amount.is_zero() {
                     if let Some(index) = self.bids.iter().position(|bid| bid.price == price) {
                         self.bids.remove(index);
                     }
@@ -99,11 +101,11 @@ impl OrderBook {
             }
 
             OrderBookMessage::AskUpdate(entry) => {
-                let amount: f64 = entry.amount.parse().unwrap();
-                let price: f64 = entry.price.parse().unwrap();
+                let amount: Decimal = entry.amount;
+                let price: Decimal = entry.price;
 
                 // Remove the entry
-                if amount == 0.0 {
+                if amount.is_zero() {
                     if let Some(index) = self.asks.iter().position(|ask| ask.price == price) {
                         self.asks.remove(index);
                     }
@@ -160,20 +162,20 @@ impl FromStr for Symbol {
 
 #[derive(Debug)]
 pub struct Wallet {
-    pub base: f64,
-    pub quote: f64,
+    pub base: Decimal,
+    pub quote: Decimal,
 }
 
 impl Wallet {
-    pub fn new(initial_amount: f64) -> Wallet {
+    pub fn new(initial_amount: Decimal) -> Wallet {
         Self {
-            base: 0.0,
+            base: dec!(0),
             quote: initial_amount,
         }
     }
 
-    pub fn rebalance(&mut self, price: f64) {
-        self.quote = self.quote / 2.0;
+    pub fn rebalance(&mut self, price: Decimal) {
+        self.quote = self.quote / dec!(2);
         self.base = self.quote / price;
     }
 }

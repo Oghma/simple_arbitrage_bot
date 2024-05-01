@@ -2,6 +2,8 @@ use std::str::FromStr;
 
 use exchange::{Exchange, OrderBook, Symbol, Wallet};
 use futures_util::StreamExt;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 
 mod exchange;
 
@@ -12,7 +14,7 @@ async fn main() -> anyhow::Result<()> {
     // TODO: Move in configuration
     let aevo_symbol = Symbol::from_str("BTC-PERP")?;
     let dydx_symbol = Symbol::from_str("BTC-USD")?;
-    let starting_value = 1000.0;
+    let starting_value = dec!(1000);
 
     let mut aevo = exchange::Aevo::new();
     let mut dydx = exchange::DyDx::new();
@@ -56,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
         let spread1 = calculate_spread(aevo_prices.1.price, dydx_prices.0.price);
         let spread2 = calculate_spread(dydx_prices.1.price, aevo_prices.0.price);
 
-        if spread1 > spread2 && spread1 > 0.0 {
+        if spread1 > spread2 && spread1 > dec!(0) {
             // We are going to buy on Aevo and sell on DyDx
             // Find the maximum amount we can trade
             let mut amount = aevo_prices.1.amount.min(dydx_prices.1.amount);
@@ -67,7 +69,7 @@ async fn main() -> anyhow::Result<()> {
 
             amount = amount_quote / curr_base_price;
 
-            if amount == 0.0 {
+            if amount.is_zero() {
                 continue;
             }
 
@@ -80,7 +82,7 @@ async fn main() -> anyhow::Result<()> {
                 calculate_pl(starting_value, curr_base_price, &aevo_wallet, &dydx_wallet)
             );
             tracing::debug!("{:?} {:?}", aevo_wallet, dydx_wallet);
-        } else if spread2 > 0.0 {
+        } else if spread2 > dec!(0) {
             //We are going to buy on DyDx and sell on Aevo
             // Find the maximum amount we can trade
             let mut amount = aevo_prices.0.amount.min(dydx_prices.0.amount);
@@ -91,7 +93,7 @@ async fn main() -> anyhow::Result<()> {
 
             amount = amount_quote / curr_base_price;
 
-            if amount == 0.0 {
+            if amount.is_zero() {
                 continue;
             }
 
@@ -108,16 +110,21 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
-fn calculate_spread(ask: f64, bid: f64) -> f64 {
+fn calculate_spread(ask: Decimal, bid: Decimal) -> Decimal {
     let num = bid - ask;
-    num / ((bid + ask) / 2.0)
+    num / ((bid + ask) / dec!(2))
 }
 
-fn calculate_pl(starting_value: f64, curr_price: f64, wallet1: &Wallet, wallet2: &Wallet) -> f64 {
+fn calculate_pl(
+    starting_value: Decimal,
+    curr_price: Decimal,
+    wallet1: &Wallet,
+    wallet2: &Wallet,
+) -> Decimal {
     // This is not the standard formula for calculating P&L
-    let starting_value = starting_value * 2.0;
+    let starting_value = starting_value * dec!(2);
     let total =
         wallet1.quote + wallet2.quote + wallet1.base * curr_price + wallet2.base * curr_price;
 
-    (total / starting_value) - 1.0
+    (total / starting_value) - dec!(1)
 }
