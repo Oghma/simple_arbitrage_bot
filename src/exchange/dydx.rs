@@ -1,6 +1,6 @@
 //! DyDx exchange implementation
 
-use std::{collections::HashMap, task::Poll};
+use std::{collections::HashMap, fmt::Display, task::Poll};
 
 use futures_util::{SinkExt, Stream, StreamExt};
 use rust_decimal::Decimal;
@@ -128,6 +128,12 @@ impl Stream for DyDx {
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
         }
+    }
+}
+
+impl Display for DyDx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "DyDx")
     }
 }
 

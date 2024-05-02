@@ -1,6 +1,6 @@
 //! Aevo exchange implementation
 
-use std::task::Poll;
+use std::{fmt::Display, task::Poll};
 
 use futures_util::{SinkExt, Stream, StreamExt};
 use rust_decimal::Decimal;
@@ -128,6 +128,12 @@ impl Stream for Aevo {
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
         }
+    }
+}
+
+impl Display for Aevo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Aevo")
     }
 }
 

@@ -3,7 +3,7 @@
 mod aevo;
 mod dydx;
 
-use std::{convert, str::FromStr};
+use std::{convert, fmt::Display, str::FromStr};
 
 pub use aevo::Aevo;
 pub use dydx::DyDx;
@@ -13,7 +13,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Deserialize;
 
-pub trait Exchange: Stream {
+pub trait Exchange: Stream + Display {
     fn order_book_subscribe(&self, symbol: &Symbol);
     fn fee(&self) -> Decimal;
 
