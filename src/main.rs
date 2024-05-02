@@ -69,14 +69,18 @@ async fn main() -> anyhow::Result<()> {
 
         if spread1 > spread2 && spread1 > dec!(0) {
             // We are going to buy on Aevo and sell on DyDx
-            // Find the maximum amount we can trade
-            let mut amount = aevo_prices.1.amount.min(dydx_prices.1.amount);
-            // We need to find out if we have money to trade. Otherwise, use
-            // the whole budget.
-            let max_amount_quote = aevo_wallet.quote.min(amount * curr_base_price);
-            let amount_quote = max_amount_quote.min(dydx_wallet.base * curr_base_price);
+            // Find the maximum amount we can trade. The amount is calculated as
+            // the minimum between Aevo best ask, DyDx best bid and the amount
+            // of the base token in the DyDx wallet.
+            let mut amount = aevo_prices
+                .1
+                .amount
+                .min(dydx_prices.0.amount.min(dydx_wallet.base));
 
-            amount = amount_quote / curr_base_price;
+            // We need to find out if we have money to trade. Otherwise, use the
+            // whole budget.
+            let max_quote_amount = aevo_wallet.quote.min(amount * curr_base_price);
+            amount = max_quote_amount / curr_base_price;
 
             if amount.is_zero()
                 || !is_profitable(
@@ -118,14 +122,18 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("");
         } else if spread2 > dec!(0) {
             //We are going to buy on DyDx and sell on Aevo
-            // Find the maximum amount we can trade
-            let mut amount = aevo_prices.0.amount.min(dydx_prices.0.amount);
+            // Find the maximum amount we can trade. The amount is calculated as
+            // the minimum between Aevo best bid, DyDx best ask and the amount
+            // of the base token in the Aevo wallet.
+            let mut amount = aevo_prices
+                .0
+                .amount
+                .min(dydx_prices.1.amount.min(aevo_wallet.base));
+
             // We need to find out if we have enough money to trade. Otherwise,
             // use the whole budget.
-            let max_amount_quote = dydx_wallet.quote.min(amount * curr_base_price);
-            let amount_quote = max_amount_quote.min(aevo_wallet.base * curr_base_price);
-
-            amount = amount_quote / curr_base_price;
+            let max_quote_amount = dydx_wallet.quote.min(amount * curr_base_price);
+            amount = max_quote_amount / curr_base_price;
 
             if amount.is_zero()
                 || !is_profitable(
