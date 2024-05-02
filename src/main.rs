@@ -17,9 +17,9 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("initializing...");
     // Configuration
     let aevo_symbol = Symbol::from_str(&std::env::var("AEVO_SYMBOL")?)?;
-    let aevo_fee = std::env::var("AEVO_FEE")?.parse()?;
+    let aevo_fee = std::env::var("AEVO_FEE")?.parse::<Decimal>()? / dec!(100);
     let dydx_symbol = Symbol::from_str(&std::env::var("DYDX_SYMBOL")?)?;
-    let dydx_fee = std::env::var("DYDX_FEE")?.parse()?;
+    let dydx_fee = std::env::var("DYDX_FEE")?.parse::<Decimal>()? / dec!(100);
     let starting_value = std::env::var("STARTING_VALUE")?.parse()?;
     let persistent_trades = std::env::var("PERSISTENT_TRADES")?.parse()?;
 
