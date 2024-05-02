@@ -90,8 +90,8 @@ impl Exchange for Aevo {
         Ok(())
     }
 
-    fn handle_fee(&self, amount: Decimal) -> Decimal {
-        amount * self.fee
+    fn fee(&self) -> Decimal {
+        self.fee
     }
 }
 
