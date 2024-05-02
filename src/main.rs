@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use exchange::{Exchange, Symbol, Wallet};
+use exchange::{BookEntry, Exchange, Symbol, Wallet};
 use futures_util::StreamExt;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -68,112 +68,30 @@ async fn main() -> anyhow::Result<()> {
         let spread2 = calculate_spread(dydx_prices.1.price, aevo_prices.0.price);
 
         if spread1 > spread2 && spread1 > dec!(0) {
-            // We are going to buy on Aevo and sell on DyDx
-            // Find the maximum amount we can trade. The amount is calculated as
-            // the minimum between Aevo best ask, DyDx best bid and the amount
-            // of the base token in the DyDx wallet.
-            let mut amount = aevo_prices
-                .1
-                .amount
-                .min(dydx_prices.0.amount.min(dydx_wallet.base));
-
-            // We need to find out if we have money to trade. Otherwise, use the
-            // whole budget.
-            let max_quote_amount = aevo_wallet.quote.min(amount * curr_base_price);
-            amount = max_quote_amount / curr_base_price;
-
-            if amount.is_zero()
-                || !is_profitable(
-                    amount,
-                    dydx_prices.0.price,
-                    aevo_prices.1.price,
-                    dydx_fee,
-                    aevo_fee,
-                )
-            {
-                continue;
-            }
-
-            // Now that we have an amount to trade, place the orders
-            aevo_wallet = aevo.buy(amount, aevo_prices.1.price, aevo_wallet).await?;
-            dydx_wallet = dydx.sell(amount, dydx_prices.0.price, dydx_wallet).await?;
-
-            tracing::info!(
-                "================================================================================"
-            );
-            tracing::info!(
-                "BUY on Aevo amount: {:.4} price: {:.4}",
-                amount,
-                aevo_prices.1.price
-            );
-            tracing::info!(
-                "SELL on DyDx amount {:.4} price {:.4}",
-                amount,
-                dydx_prices.0.price
-            );
-            tracing::info!("Aevo wallet {}", aevo_wallet);
-            tracing::info!("Dydx wallet {}", dydx_wallet);
-            let (pl, total) =
-                calculate_pl(starting_value, curr_base_price, &aevo_wallet, &dydx_wallet);
-            tracing::info!("total balance {}. New P&L {:.4}%", total, pl);
-            tracing::info!(
-                "================================================================================"
-            );
-            tracing::info!("");
-        } else if spread2 > dec!(0) {
-            //We are going to buy on DyDx and sell on Aevo
-            // Find the maximum amount we can trade. The amount is calculated as
-            // the minimum between Aevo best bid, DyDx best ask and the amount
-            // of the base token in the Aevo wallet.
-            let mut amount = aevo_prices
-                .0
-                .amount
-                .min(dydx_prices.1.amount.min(aevo_wallet.base));
-
-            // We need to find out if we have enough money to trade. Otherwise,
-            // use the whole budget.
-            let max_quote_amount = dydx_wallet.quote.min(amount * curr_base_price);
-            amount = max_quote_amount / curr_base_price;
-
-            if amount.is_zero()
-                || !is_profitable(
-                    amount,
-                    aevo_prices.0.price,
-                    dydx_prices.1.price,
-                    aevo_fee,
-                    dydx_fee,
-                )
-            {
-                continue;
-            }
-
-            // Now that we have an amount to trade, place the orders
-            aevo_wallet = aevo.sell(amount, aevo_prices.0.price, aevo_wallet).await?;
-            dydx_wallet = dydx.buy(amount, dydx_prices.1.price, dydx_wallet).await?;
-
-            tracing::info!(
-                "================================================================================"
-            );
-            tracing::info!(
-                "BUY on DyDx amount: {:.4} price: {:.4}",
-                amount,
-                dydx_prices.1.price
-            );
-            tracing::info!(
-                "SELL on Aevo amount {:.4} price {:.4}",
-                amount,
-                aevo_prices.0.price
-            );
-            tracing::info!("Aevo wallet {}", aevo_wallet);
-            tracing::info!("Dydx wallet {}", dydx_wallet);
-            let (pl, total) =
-                calculate_pl(starting_value, curr_base_price, &aevo_wallet, &dydx_wallet);
-            tracing::info!("total balance {}. New P&L {:.4}%", total, pl);
-            tracing::info!(
-                "================================================================================"
-            );
-            tracing::info!("");
-        }
+            (aevo_wallet, dydx_wallet) = run_strategy(
+                &aevo,
+                &dydx,
+                aevo_prices,
+                dydx_prices,
+                aevo_wallet,
+                dydx_wallet,
+                starting_value,
+                curr_base_price,
+            )
+            .await?;
+        } else {
+            (dydx_wallet, aevo_wallet) = run_strategy(
+                &dydx,
+                &aevo,
+                dydx_prices,
+                aevo_prices,
+                dydx_wallet,
+                aevo_wallet,
+                starting_value,
+                curr_base_price,
+            )
+            .await?;
+        };
     }
 }
 
@@ -208,4 +126,76 @@ fn is_profitable(
     let buy = amount * buy_price;
 
     sell - buy - sell * sell_fee - buy * buy_fee > dec!(0)
+}
+
+async fn run_strategy(
+    exc1: &impl Exchange,
+    exc2: &impl Exchange,
+    exc1_prices: (&BookEntry, &BookEntry),
+    exc2_prices: (&BookEntry, &BookEntry),
+    exc1_wallet: Wallet,
+    exc2_wallet: Wallet,
+    starting_value: Decimal,
+    ticker_base_price: Decimal,
+) -> anyhow::Result<(Wallet, Wallet)> {
+    // We are going to buy on exc1 and sell on exc2
+    // Find the maximum amount we can trade. The amount is calculated as the
+    // minimum between exc1 best ask, exc2 best bid and the amount of the base
+    // token in the exc1 wallet.
+    let mut amount = exc1_prices
+        .1
+        .amount
+        .min(exc2_prices.0.amount.min(exc2_wallet.base));
+
+    // We need to find out if we have money to trade. Otherwise, use the whole
+    // budget.
+    let max_quote_amount = exc1_wallet.quote.min(amount * exc1_prices.1.price);
+    amount = max_quote_amount / exc1_prices.1.price;
+
+    if amount.is_zero()
+        || !is_profitable(
+            amount,
+            exc2_prices.0.price,
+            exc1_prices.1.price,
+            exc2.fee(),
+            exc1.fee(),
+        )
+    {
+        return Ok((exc1_wallet, exc2_wallet));
+    }
+
+    let exc1_wallet = exc1.buy(amount, exc1_prices.1.price, exc1_wallet).await?;
+    let exc2_wallet = exc2.sell(amount, exc2_prices.0.price, exc2_wallet).await?;
+
+    tracing::info!(
+        "================================================================================"
+    );
+    tracing::info!(
+        "BUY on {} amount: {:.4} price: {:.4}",
+        exc1,
+        amount,
+        exc1_prices.1.price
+    );
+    tracing::info!(
+        "SELL on {} amount {:.4} price {:.4}",
+        exc2,
+        amount,
+        exc2_prices.0.price
+    );
+    tracing::info!("{} wallet {}", exc1, exc1_wallet);
+    tracing::info!("{} wallet {}", exc2, exc2_wallet);
+
+    let (pl, total) = calculate_pl(
+        starting_value,
+        ticker_base_price,
+        &exc1_wallet,
+        &exc2_wallet,
+    );
+    tracing::info!("total balance {}. New P&L {:.4}%", total, pl);
+    tracing::info!(
+        "================================================================================"
+    );
+    tracing::info!("");
+
+    return Ok((exc1_wallet, exc2_wallet));
 }
