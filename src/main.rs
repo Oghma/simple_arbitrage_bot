@@ -7,6 +7,15 @@ use rust_decimal_macros::dec;
 
 mod exchange;
 
+struct Config {
+    aevo_symbol: Symbol,
+    aevo_fee: Decimal,
+    dydx_symbol: Symbol,
+    dydx_fee: Decimal,
+    starting_value: Decimal,
+    persistent_trades: bool,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenv::dotenv().ok();
@@ -23,6 +32,14 @@ async fn main() -> anyhow::Result<()> {
     let starting_value = std::env::var("STARTING_VALUE")?.parse()?;
     let persistent_trades = std::env::var("PERSISTENT_TRADES")?.parse()?;
 
+    let config = Config {
+        aevo_symbol,
+        aevo_fee,
+        dydx_symbol,
+        dydx_fee,
+        starting_value,
+        persistent_trades,
+    };
     let mut aevo = exchange::Aevo::new(persistent_trades, aevo_fee);
     let mut dydx = exchange::DyDx::new(persistent_trades, dydx_fee);
 
