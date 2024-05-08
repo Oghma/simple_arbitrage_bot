@@ -39,9 +39,10 @@ pub async fn run_bot(config: &Config) -> anyhow::Result<()> {
             _ => continue,
         };
 
+        // The firsts iterations have empty order books. Wait until are filled
         if best_prices
             .iter()
-            .all(|price| price.0.is_some() && price.1.is_some())
+            .all(|price| price.0.is_none() && price.1.is_none())
         {
             continue;
         }
@@ -56,6 +57,7 @@ pub async fn run_bot(config: &Config) -> anyhow::Result<()> {
             tracing::debug!("wallets rebalanced {:?} {:?}", aevo_wallet, dydx_wallet);
         }
 
+        // We want the smallest best ask because we buy from it
         let best_ask = best_prices
             .iter()
             .enumerate()
@@ -69,6 +71,7 @@ pub async fn run_bot(config: &Config) -> anyhow::Result<()> {
             .map(|(key, ask)| (key, ask.1.clone().unwrap()))
             .unwrap();
 
+        // We want the biggest best bid because we sell to it
         let best_bid = best_prices
             .iter()
             .enumerate()
@@ -89,6 +92,7 @@ pub async fn run_bot(config: &Config) -> anyhow::Result<()> {
 
         if calculate_spread(best_ask.1.price, best_bid.1.price) > dec!(0) {
             if best_ask.0 == 0 {
+                // Buy on Aevo and sell on DyDx
                 //FIXME: Not working
                 (aevo_wallet, dydx_wallet) = run_strategy(
                     &aevo,
@@ -102,6 +106,7 @@ pub async fn run_bot(config: &Config) -> anyhow::Result<()> {
                 )
                 .await?;
             } else {
+                // Buy on DyDx and sell on Aevo
                 //FIXME: Not working
                 (dydx_wallet, aevo_wallet) = run_strategy(
                     &dydx,
