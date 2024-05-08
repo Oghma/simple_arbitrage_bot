@@ -6,6 +6,7 @@ mod dydx;
 use std::{convert, fmt::Display, str::FromStr};
 
 pub use aevo::Aevo;
+use async_trait::async_trait;
 pub use dydx::DyDx;
 
 use futures_util::Stream;
@@ -13,7 +14,8 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::Deserialize;
 
-pub trait Exchange: Stream + Display {
+#[async_trait]
+pub trait Exchange: Stream + Display + Send + Sync {
     fn order_book_subscribe(&self, symbol: &Symbol);
     fn fee(&self) -> Decimal;
 

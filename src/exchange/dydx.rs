@@ -2,6 +2,7 @@
 
 use std::{collections::HashMap, fmt::Display, task::Poll};
 
+use async_trait::async_trait;
 use futures_util::{SinkExt, Stream, StreamExt};
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -34,6 +35,7 @@ impl DyDx {
     }
 }
 
+#[async_trait]
 impl Exchange for DyDx {
     fn order_book_subscribe(&self, symbol: &Symbol) {
         // This is very ugly and should not be done. The connection with the

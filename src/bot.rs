@@ -1,5 +1,7 @@
 //! Arbitrage bot
 
+use std::pin::Pin;
+
 use crate::{
     exchange::{Aevo, BookEntry, DyDx, Exchange, Wallet},
     Config,
@@ -7,10 +9,11 @@ use crate::{
 use futures_util::StreamExt;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use tokio_stream::StreamMap;
 
 pub async fn run_bot(config: &Config) -> anyhow::Result<()> {
-    let mut aevo = Aevo::new(config.persistent_trades, config.aevo_fee);
-    let mut dydx = DyDx::new(config.persistent_trades, config.dydx_fee);
+    let aevo = Aevo::new(config.persistent_trades, config.aevo_fee);
+    let dydx = DyDx::new(config.persistent_trades, config.dydx_fee);
 
     aevo.order_book_subscribe(&config.aevo_symbol);
     dydx.order_book_subscribe(&config.dydx_symbol);
@@ -19,29 +22,32 @@ pub async fn run_bot(config: &Config) -> anyhow::Result<()> {
     let mut aevo_wallet = Wallet::new(config.starting_value);
     let mut dydx_wallet = Wallet::new(config.starting_value);
 
-    let mut aevo_prices = (None, None);
-    let mut dydx_prices = (None, None);
+    let mut exchanges = StreamMap::<
+        usize,
+        Pin<Box<dyn Exchange<Item = (Option<BookEntry>, Option<BookEntry>)>>>,
+    >::new();
 
+    exchanges.insert(0, Box::pin(aevo));
+    exchanges.insert(1, Box::pin(dydx));
+
+    let mut best_prices = vec![(None, None), (None, None)];
     tracing::info!("bot initialized, starting...");
 
-    loop {
-        tokio::select! {
-            Some(bests) = dydx.next() => {aevo_prices = bests;}
-            Some(bests) = aevo.next() => {dydx_prices = bests;}
-        };
-
-        let aevo_prices = match aevo_prices {
-            (Some(ref bid), Some(ref ask)) => (bid, ask),
+    while let Some((key, update)) = exchanges.next().await {
+        match update {
+            (Some(bid), Some(ask)) => best_prices[key] = (Some(bid), Some(ask)),
             _ => continue,
         };
 
-        let dydx_prices = match dydx_prices {
-            (Some(ref bid), Some(ref ask)) => (bid, ask),
-            _ => continue,
-        };
+        if best_prices
+            .iter()
+            .all(|price| price.0.is_some() && price.1.is_some())
+        {
+            continue;
+        }
 
         //Let assume the current price of base token is always the bid price from Aevo
-        let curr_base_price = aevo_prices.0.price;
+        let curr_base_price = best_prices[0].0.as_ref().map(|entry| entry.price).unwrap();
 
         if !wallets_initialized {
             aevo_wallet.rebalance(curr_base_price);
@@ -50,35 +56,69 @@ pub async fn run_bot(config: &Config) -> anyhow::Result<()> {
             tracing::debug!("wallets rebalanced {:?} {:?}", aevo_wallet, dydx_wallet);
         }
 
-        let spread1 = calculate_spread(aevo_prices.1.price, dydx_prices.0.price);
-        let spread2 = calculate_spread(dydx_prices.1.price, aevo_prices.0.price);
+        let best_ask = best_prices
+            .iter()
+            .enumerate()
+            .min_by(|(_, num1), (_, num2)| {
+                num1.1
+                    .clone()
+                    .unwrap()
+                    .price
+                    .cmp(&num2.1.clone().unwrap().price)
+            })
+            .map(|(key, ask)| (key, ask.1.clone().unwrap()))
+            .unwrap();
 
-        if spread1 > spread2 && spread1 > dec!(0) {
-            (aevo_wallet, dydx_wallet) = run_strategy(
-                &aevo,
-                &dydx,
-                aevo_prices,
-                dydx_prices,
-                aevo_wallet,
-                dydx_wallet,
-                config.starting_value,
-                curr_base_price,
-            )
-            .await?;
-        } else {
-            (dydx_wallet, aevo_wallet) = run_strategy(
-                &dydx,
-                &aevo,
-                dydx_prices,
-                aevo_prices,
-                dydx_wallet,
-                aevo_wallet,
-                config.starting_value,
-                curr_base_price,
-            )
-            .await?;
-        };
+        let best_bid = best_prices
+            .iter()
+            .enumerate()
+            .max_by(|(_, num1), (_, num2)| {
+                num1.0
+                    .clone()
+                    .unwrap()
+                    .price
+                    .cmp(&num2.0.clone().unwrap().price)
+            })
+            .map(|(key, ask)| (key, ask.0.clone().unwrap()))
+            .unwrap();
+
+        // Check best_bid and best_ask are in different exchanges
+        if best_bid.0 == best_ask.0 {
+            continue;
+        }
+
+        if calculate_spread(best_ask.1.price, best_bid.1.price) > dec!(0) {
+            if best_ask.0 == 0 {
+                //FIXME: Not working
+                (aevo_wallet, dydx_wallet) = run_strategy(
+                    &aevo,
+                    &dydx,
+                    &best_ask.1,
+                    &best_bid.1,
+                    aevo_wallet,
+                    dydx_wallet,
+                    config.starting_value,
+                    curr_base_price,
+                )
+                .await?;
+            } else {
+                //FIXME: Not working
+                (dydx_wallet, aevo_wallet) = run_strategy(
+                    &dydx,
+                    &aevo,
+                    &best_ask.1,
+                    &best_bid.1,
+                    dydx_wallet,
+                    aevo_wallet,
+                    config.starting_value,
+                    curr_base_price,
+                )
+                .await?;
+            }
+        }
     }
+
+    Ok(())
 }
 
 fn calculate_spread(ask: Decimal, bid: Decimal) -> Decimal {
@@ -118,8 +158,8 @@ fn is_profitable(
 async fn run_strategy(
     exc1: &impl Exchange,
     exc2: &impl Exchange,
-    exc1_prices: (&BookEntry, &BookEntry),
-    exc2_prices: (&BookEntry, &BookEntry),
+    exc1_prices: &BookEntry,
+    exc2_prices: &BookEntry,
     exc1_wallet: Wallet,
     exc2_wallet: Wallet,
     starting_value: Decimal,
@@ -130,20 +170,19 @@ async fn run_strategy(
     // minimum between exc1 best ask, exc2 best bid and the amount of the base
     // token in the exc1 wallet.
     let mut amount = exc1_prices
-        .1
         .amount
-        .min(exc2_prices.0.amount.min(exc2_wallet.base));
+        .min(exc2_prices.amount.min(exc2_wallet.base));
 
     // We need to find out if we have money to trade. Otherwise, use the whole
     // budget.
-    let max_quote_amount = exc1_wallet.quote.min(amount * exc1_prices.1.price);
-    amount = max_quote_amount / exc1_prices.1.price;
+    let max_quote_amount = exc1_wallet.quote.min(amount * exc1_prices.price);
+    amount = max_quote_amount / exc1_prices.price;
 
     if amount.is_zero()
         || !is_profitable(
             amount,
-            exc2_prices.0.price,
-            exc1_prices.1.price,
+            exc2_prices.price,
+            exc1_prices.price,
             exc2.fee(),
             exc1.fee(),
         )
@@ -151,8 +190,8 @@ async fn run_strategy(
         return Ok((exc1_wallet, exc2_wallet));
     }
 
-    let exc1_wallet = exc1.buy(amount, exc1_prices.1.price, exc1_wallet).await?;
-    let exc2_wallet = exc2.sell(amount, exc2_prices.0.price, exc2_wallet).await?;
+    let exc1_wallet = exc1.buy(amount, exc1_prices.price, exc1_wallet).await?;
+    let exc2_wallet = exc2.sell(amount, exc2_prices.price, exc2_wallet).await?;
 
     tracing::info!(
         "================================================================================"
@@ -161,13 +200,13 @@ async fn run_strategy(
         "BUY on {} amount: {:.4} price: {:.4}",
         exc1,
         amount,
-        exc1_prices.1.price
+        exc1_prices.price
     );
     tracing::info!(
         "SELL on {} amount {:.4} price {:.4}",
         exc2,
         amount,
-        exc2_prices.0.price
+        exc2_prices.price
     );
     tracing::info!("{} wallet {}", exc1, exc1_wallet);
     tracing::info!("{} wallet {}", exc2, exc2_wallet);
@@ -184,5 +223,5 @@ async fn run_strategy(
     );
     tracing::info!("");
 
-    return Ok((exc1_wallet, exc2_wallet));
+    Ok((exc1_wallet, exc2_wallet))
 }

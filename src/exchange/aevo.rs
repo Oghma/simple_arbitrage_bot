@@ -2,6 +2,7 @@
 
 use std::{fmt::Display, task::Poll};
 
+use async_trait::async_trait;
 use futures_util::{SinkExt, Stream, StreamExt};
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -35,6 +36,7 @@ impl Aevo {
     }
 }
 
+#[async_trait]
 impl Exchange for Aevo {
     fn order_book_subscribe(&self, symbol: &Symbol) {
         // This is very ugly and should not be done. The connection with the
